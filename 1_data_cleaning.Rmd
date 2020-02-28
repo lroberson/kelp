@@ -1,0 +1,125 @@
+---
+title: "1_data_cleaning"
+author: "Leslie Roberson"
+date: "2/28/2020"
+output: html_document
+---
+
+## Summary
+
+Here I load the BRUVs video analysis spreadsheets and do some cleaning to combine them into one dataframe
+
+There are 4 sampling areas:
+1. Betty's Bay (BB)
+2. Dyer Island (Dyer)
+3. Table Mountain National Park - False Bay (TMNP)
+4. Walker Bay and surrounds, data collected by South africa shark conservancy (SASC)
+
+```{r setup, include=FALSE}
+
+library(tidyverse)
+library(janitor)
+library(here)
+library(stringr)
+
+```
+
+## Load data
+
+```{load and clean data}
+
+## load data
+
+sasc <- read_csv(here("_data/data_cleaned/SASC_cleaned.csv"))
+bb_tmnp_dyer <- read_csv(here("_data/data_cleaned/Dyer_BB_TMNP_2020ms.csv"))
+
+# tmnp is missing lon lat coordinates (this was collected by a previous masters student)
+# The video clips have already been added together so each sample == 1 hour duration (gopros film in 15 or 30 min segments)
+# MaxN has already been selected and duplicates removed, leaving one species record per BRUVs sample
+
+#<><><><>
+## some cleaning before joining
+
+sasc <- sasc %>% clean_names(case = "snake")
+names(sasc) 
+# depth in meters, 
+# lon and lat in decimal degrees (we won't use these in the model, they're approximate sampling locations - depth an "area_sub" are more important)
+# "S" = species richness (number of species in that sample)
+n_distinct(sasc$sasc_sample_number) # n = 32 sites
+unique(sasc$habitat) # just reef and kelp
+
+bb_tmnp_dyer <- bb_tmnp_dyer %>% clean_names(case = "snake")
+
+names(bb_tmnp_dyer)
+
+n_distinct(bb_tmnp_dyer$survey_sample_id) # n = 107 sites
+
+unique(bb_tmnp_dyer$habitat) # Sand sites removed
+
+bb_tmnp_dyer <- bb_tmnp_dyer %>% select(-c(sample_number, habitat2, family))
+sasc <- sasc %>% select(-c(s, depthcat))
+
+## add area column to sasc
+
+sasc$area <- "HERMANUS" 
+# see frmo "area_sub" that some sites are around the corner in the next bay east of Hermanus. These are actually closer to the Dyer Island sampling area than to Hermanus, so we should think about re-categorizing the spatial areas (and some of hte sasc areas outside of hermanus were only sampled a couple times)
+
+## fix caps problems
+
+sasc$area_sub <- toupper(sasc$area_sub)
+sasc$habitat <- toupper(sasc$habitat)
+bb_tmnp_dyer$habitat <- toupper(bb_tmnp_dyer$habitat)
+bb_tmnp_dyer$area_sub <- toupper(bb_tmnp_dyer$area_sub)
+sasc <- sasc %>% rename(sample_id_2017 = sasc_sample_number)
+bb_tmnp_dyer <- bb_tmnp_dyer %>% rename(sample_id_2017 = survey_sample_id)
+
+names(sasc)
+nrow(sasc) # n = 176
+names(bb_tmnp_dyer)
+nrow(bb_tmnp_dyer) # n = 1172
+
+#<><><>
+## combine data sets
+
+dat_combined <- bind_rows(sasc, bb_tmnp_dyer)
+nrow(dat_combined) #n = 1348
+176 + 1172 # n = 1348
+
+## make unique sample id for this dataset
+
+dat_combined <- dat_combined %>%
+  mutate(sample_id_2020 = group_indices(dat_combined, "area", "area_sub", "sample_id_2017")) 
+
+# reorder cols
+dat_combined <- dat_combined %>% select(c(sample_id_2020, area, area_sub, year, habitat, depth, species, max_n, sampling_period, latitude, longitude, sample_id_2017))
+
+dat_combined$species <- stringr::str_to_sentence(dat_combined$species)
+
+## remove Jasus lalandii (rock lobster, not a fish - was in here bc commercial species of interest)
+
+dat_combined <- dat_combined %>% filter(species != "Jasus lalandii")
+
+## check for misspellings
+
+spp_list <- dat_combined %>% arrange(species) %>% distinct(species)
+View(spp_list)
+# All are species except "Gobidae spp." Gobies are impossible to tell apart on BRUVs... here I leave it in as a genus. Could remove later if you want
+
+## "Unidentified" should be removed
+
+dat_combined <- dat_combined %>% filter(species != "Unidentified")
+
+write_csv(dat_combined, "_data/data_combined.csv")
+
+```
+
+## explore data
+
+```{r}
+
+## Calculate species richness per site
+
+## reassign some of the Hermanus areas to Dyer?
+
+```
+
